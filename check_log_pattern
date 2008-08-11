@@ -1,0 +1,85 @@
+#!/usr/bin/ruby
+# vim: filetype=ruby
+#
+# Scan a log file for a specific pattern (regex)
+#
+# If the pattern is found, return the specified exit code (2 by default)
+#
+# check_log_pattern -h for help
+#
+require 'optparse'
+
+PLUGIN_VERSION = "1.0"
+
+#
+# Return true if pattern found
+#
+# @file: the logfile to scan
+# @backlog_minutes: look for the pattern from (now - backlog_minutes)
+#   to the end of the file
+# @patter: regex to match
+#
+def scan_logfile(file, backlog_minutes, pattern)
+  offset_found = false
+  from_time = Time.now - backlog_minutes*60
+  offset = from_time.to_s.split[1..3].join(" ")
+  File.open(file) do |f|
+    while line = f.gets do
+      tokens = line.split[0..3]
+      hour, min, sec = tokens[2].split(":")
+      t = Time.local(Time.now.year, tokens[0], tokens[1].to_i, hour.to_i, min.to_i, sec.to_i)
+      if t > from_time
+        offset_found = true
+      end
+      if offset_found and line =~ pattern
+        return line
+      end
+    end
+  end
+end
+
+if __FILE__.eql? $0
+  args = {}
+  args[:backlog_minutes] = 5
+  args[:logfile] = "/var/log/messages"
+  args[:exit_status] = 2
+  opts = OptionParser.new do |opts|
+      opts.banner = "Usage: check_log_pattern [options] <pattern>"
+      opts.on("-m", "--minutes MIN",Integer, "from MIN minutes ago to the end of the log [5].") do |m|
+        args[:backlog_minutes] = m
+      end
+      opts.on("-f", "--logfile FILE", "Logfile to scan [/var/log/messages].") do |f|
+        args[:logfile] = f
+      end
+      opts.on("-e", "--exit-status CODE", Integer, "Exit status if pattern found [2].") do |e|
+        args[:exit_status] = e
+      end
+      opts.on_tail("-h", "--help", "Show this message") do
+          STDERR.puts opts
+          exit
+      end
+      opts.on("-v", "--version", "Show plugin version.") do
+        puts PLUGIN_VERSION
+        exit
+      end
+  end
+  begin
+    rest = opts.parse! ARGV
+  rescue
+    STDERR.puts opts
+    exit
+  end
+  if rest[0].nil?
+    STDERR.puts opts.help
+    exit
+  end
+  if not File.exist?(args[:logfile])
+    puts "Log file #{args[:logfile]} does not exist."
+    STDERR.puts opts.help
+    exit 3
+  end
+  rval = scan_logfile(args[:logfile], args[:backlog_minutes], /#{rest[0]}/)
+  puts rval || "Pattern not found."
+  exit args[:exit_status] if not rval.nil?
+  exit
+end
