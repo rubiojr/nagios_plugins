@@ -1,0 +1,93 @@
+#!/usr/bin/ruby
+# vim: filetype=ruby
+#
+# check_apache_status nagios plugin
+#
+# Parses the output from apache mod_status using an http request
+# (i.e. from http://my.httpd.com/server-status?auto)
+#
+# ExtendedStatus needs to be on
+# ( see http://httpd.apache.org/docs/2.2/mod/mod_status.html#extendedstatus )
+#
+# check_apache_status --address my.httpd.com
+#
+
+PLUGIN_VERSION = "1.0"
+
+require 'net/http'
+require 'optparse'
+
+#
+# @host: something like www.foobar.com
+# @path: something like /server-status
+#
+# The request will be something like http://host/path?auto
+# 
+def get_status(host, path="/server-status")
+  req = Net::HTTP.new(host, 80)
+  headers, data = req.get(path+"?auto")
+
+  lines = data.split("\n")
+  lines.find { |line| line =~ /ReqPerSec/ }.match(/^ReqPerSec: (.*)$/)
+  req_per_sec = $1.dup
+  perfdata = "req_per_sec=#{req_per_sec}" 
+
+  lines.find { |line| line =~ /BusyWorkers/ }.match(/^BusyWorkers: (.*)$/)
+  busy_workers = $1.dup
+  perfdata << " busy_workers=#{busy_workers}" 
+
+  lines.find { |line| line =~ /CPULoad/ }.match(/^CPULoad: (.*)$/)
+  cpu_load = $1.dup
+  perfdata << " cpu_load=#{cpu_load}" 
+
+  lines.find { |line| line =~ /Total Accesses/ }.match(/^Total Accesses: (.*)$/)
+  total_accesses = $1.dup
+  perfdata << " cpu_load=#{cpu_load}" 
+
+  lines.find { |line| line =~ /Uptime/ }.match(/^Uptime: (.*)$/)
+  uptime = $1.dup
+  perfdata << " uptime=#{uptime}"
+  
+  lines.find { |line| line =~ /IdleWorkers/ }.match(/^IdleWorkers: (.*)$/)
+  idle_workers = $1.dup
+  perfdata << " idle_workers=#{idle_workers}"
+  
+  lines.find { |line| line =~ /BytesPerSec/ }.match(/^BytesPerSec: (.*)$/)
+  bytes_per_sec = $1.dup
+  perfdata << " bytes_per_sec=#{bytes_per_sec}"
+
+  return "HTTP Server Ok | #{perfdata}"
+end
+
+if $0.eql? __FILE__
+  opts = OptionParser.new do |opts|
+    address = nil
+    opts.on("-a", "--address ADDRESS", "Server hostname or address") do |o|
+      address = o
+    end
+    opts.on("-v", "--version", "Show the plugin's version") do |o|
+      puts "#{File.basename($0)} version #{PLUGIN_VERSION}"
+      exit 0
+    end
+    opts.on_tail("-h", "--help", "Print this help.") do
+      STDERR.puts opts
+      exit
+    end
+    rest = opts.parse! ARGV
+    if address.nil?
+      STDERR.puts "Invalid host address."
+      STDERR.puts opts
+      exit 4
+    else
+      begin
+        retval = get_status(address)
+        puts retval
+      rescue Exception => e
+        puts "Unknown error. #{e.message}"
+        exit 4
+      end
+      exit 0
+    end
+  end
+end
+
