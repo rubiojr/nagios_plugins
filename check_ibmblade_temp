@@ -12,13 +12,14 @@
 # check_ibmblade_temp -H hostname [-w warning threshold] [-c critical threshold]
 #
 
-PLUGIN_VERSION = "1.0"
+PLUGIN_VERSION = "1.0.2"
 
 begin
   require 'rubygems'
   require 'snmp'
   require 'optparse'
 rescue Exception => e
+  puts "You need rubygems and snmp gem installed."
   puts e
   exit 4
 end
@@ -40,16 +41,24 @@ end
 if $0.eql? __FILE__
   opts = OptionParser.new do |opts|
     address = nil
-    warning = 45
-    critical = 50
+    mmt_warning = 45
+    mmt_critical = 50
+    fpt_warning = 25
+    fpt_critical = 30
     opts.on("-H", "--host ADDRESS", "Server hostname or address") do |o|
       address = o
     end
-    opts.on("-w", "--warning WARNING", "WARNING threshold") do |o|
-      warning = o.to_f
+    opts.on("--mmt-warning WARNING", "MM Temperature WARNING threshold") do |o|
+      mmt_warning = o.to_f
     end
-    opts.on("-c", "--critical CRITICAL", "CRITICAL threshold") do |o|
-      critical = o.to_f
+    opts.on("--mmt-critical CRITICAL", "MM Temperature CRITICAL threshold") do |o|
+      mmt_critical = o.to_f
+    end
+    opts.on("--fpt-warning WARNING", "Front Panel WARNING threshold") do |o|
+      fpt_warning = o.to_f
+    end
+    opts.on("--fpt-critical CRITICAL", "Front Panel CRITICAL threshold") do |o|
+      fpt_critical = o.to_f
     end
     opts.on("-v", "--version", "Show the plugin's version") do |o|
       puts "#{File.basename($0)} version #{PLUGIN_VERSION}"
@@ -57,11 +66,19 @@ if $0.eql? __FILE__
     end
     opts.on_tail("-h", "--help", "Print this help.") do
       STDERR.puts opts
+      STDERR.puts "\nDefault fpt thresholds: warn #{fpt_warning}, crit #{fpt_critical}"
+      STDERR.puts "Default mmt thresholds: warn #{mmt_warning}, crit #{mmt_critical}"
       STDERR.puts "\nUsage:"
-      STDERR.puts "check_ibmblade_temp -H hostname [-w warning threshold] [-c critical threshold]"
+      STDERR.puts "check_ibmblade_temp -H hostname [--mmt-warning threshold] [--mmt-critical threshold] [--fpt-warning threshold] [--fpt-critical threshold]"
       exit
     end
-    rest = opts.parse! ARGV
+    begin
+      rest = opts.parse! ARGV
+    rescue Exception => e
+      puts "Error parsing arguments."
+      puts e.message
+      exit 4
+    end
     mmt = 0
     fpt = 0
     if address.nil?
@@ -78,11 +95,10 @@ if $0.eql? __FILE__
         exit 3
       else
         status = [ 0 , "Ok" ]
-        if mmt >= warning or fpt >= warning
+        if mmt >= mmt_warning or fpt >= fpt_warning
           status = [ 1 , "WARNING" ]
         end
-        if mmt >= critical or fpt >= critical
-          puts "crit"
+        if mmt >= mmt_critical or fpt >= fpt_critical
           status = [ 2 , "CRITICAL" ]
         end
         perf_data = "frontPanelTemp=#{fpt} mmTemp=#{mmt}"
