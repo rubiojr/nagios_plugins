@@ -1,0 +1,95 @@
+#!/usr/bin/ruby
+# vim: filetype=ruby
+#
+# Check IBM Blade Temperature Sensors via SNMP
+#
+# Only SNMP v1 is supported
+#
+# http://www.oidview.com/mibs/2/BLADE-MIB.html
+#
+# Example:
+#
+# check_ibmblade_temp -H hostname [-w warning threshold] [-c critical threshold]
+#
+
+PLUGIN_VERSION = "1.0"
+
+begin
+  require 'rubygems'
+  require 'snmp'
+  require 'optparse'
+rescue Exception => e
+  puts e
+  exit 4
+end
+
+def query(host)
+  mm_temp = 0
+  front_panel_temp = 0
+  SNMP::Manager.open(:Host => host, :Version => :SNMPv1) do |snmp|
+    val = snmp.get_value "1.3.6.1.4.1.2.3.51.2.2.1.1.2.0"
+  #"1.3.6.1.4.1.2.3.51.2.2.1.5.1.0"])
+    #
+    mm_temp = val.split[0].to_f
+    val = snmp.get_value "1.3.6.1.4.1.2.3.51.2.2.1.5.1.0"
+    front_panel_temp = val.split[0].to_f
+  end
+  return mm_temp, front_panel_temp
+end
+
+if $0.eql? __FILE__
+  opts = OptionParser.new do |opts|
+    address = nil
+    warning = 45
+    critical = 50
+    opts.on("-H", "--host ADDRESS", "Server hostname or address") do |o|
+      address = o
+    end
+    opts.on("-w", "--warning WARNING", "WARNING threshold") do |o|
+      warning = o.to_f
+    end
+    opts.on("-c", "--critical CRITICAL", "CRITICAL threshold") do |o|
+      critical = o.to_f
+    end
+    opts.on("-v", "--version", "Show the plugin's version") do |o|
+      puts "#{File.basename($0)} version #{PLUGIN_VERSION}"
+      exit 0
+    end
+    opts.on_tail("-h", "--help", "Print this help.") do
+      STDERR.puts opts
+      STDERR.puts "\nUsage:"
+      STDERR.puts "check_ibmblade_temp -H hostname [-w warning threshold] [-c critical threshold]"
+      exit
+    end
+    rest = opts.parse! ARGV
+    mmt = 0
+    fpt = 0
+    if address.nil?
+      STDERR.puts "Invalid host address."
+      STDERR.puts opts
+      exit 4
+    else
+      begin
+        mmt, fpt = query(address)
+      rescue Exception => e
+        puts "Error retrieving data. #{e.message}"
+      end
+      if mmt == 0 and fpt == 0
+        exit 3
+      else
+        status = [ 0 , "Ok" ]
+        if mmt >= warning or fpt >= warning
+          status = [ 1 , "WARNING" ]
+        end
+        if mmt >= critical or fpt >= critical
+          puts "crit"
+          status = [ 2 , "CRITICAL" ]
+        end
+        perf_data = "frontPanelTemp=#{fpt} mmTemp=#{mmt}"
+        puts "Temp #{status[1]}. #{perf_data} | #{perf_data}"
+        exit status[0]
+      end
+    end
+  end
+end
+
